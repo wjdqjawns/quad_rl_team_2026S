@@ -1,0 +1,77 @@
+# =============================================================================
+# quadrl — master configuration
+# =============================================================================
+# All values shown are the defaults defined in utils/config.py.
+# Override only what you need; missing keys fall back to defaults.
+#
+# Run:
+#   python -m quadrl.cli --config config/config.yaml
+# =============================================================================
+
+# ── Environment ───────────────────────────────────────────────────────────────
+env:
+  model_path:        "asset/unitree_go1/go1.xml"
+  sim_dt:            0.002          # MuJoCo step: 500 Hz
+  control_dt:        0.02           # policy / MPC step: 50 Hz
+  max_episode_steps: 1000
+  render_mode:       null           # null | "human" | "rgb_array"
+
+# ── Gait scheduler (contact schedule provider) ────────────────────────────────
+gait:
+  pattern:           "trot"         # provides contact schedule for MPC
+  frequency:         2.0            # Hz
+  stance_ratio:      0.6            # fraction of cycle in stance
+  step_height:       0.08           # swing foot lift height (m)  [informational]
+
+# ── Residual action scale ─────────────────────────────────────────────────────
+control:
+  action_scale:      5.0            # RL residual torque scale (Nm)
+  torque_limit:      33.5           # hardware torque limit per joint (Nm)
+
+# ── MPC (Single Rigid Body Dynamics, Convex QP) ───────────────────────────────
+mpc:
+  horizon:           10             # prediction steps N
+  dt_mpc:            0.02           # MPC discretisation step (= control_dt)
+  target_height:     0.30           # desired CoM height (m)
+  friction_mu:       0.6            # friction cone coefficient μ
+  f_max:             200.0          # max normal GRF per stance leg (N)
+  torque_limit:      33.5           # Nm — clips GRF→τ conversion output
+
+  # State cost: [roll, pitch, yaw, px, py, pz, ωx, ωy, ωz, vx, vy, vz]
+  state_weights:     [50., 50., 0., 0., 0., 100., 0., 0., 10., 10., 10., 0.]
+
+  # Control cost: [Fx, Fy, Fz] × 4 legs  (penalises large GRFs)
+  ctrl_weights:      [1.e-4, 1.e-4, 1.e-4,
+                      1.e-4, 1.e-4, 1.e-4,
+                      1.e-4, 1.e-4, 1.e-4,
+                      1.e-4, 1.e-4, 1.e-4]
+
+# ── Policy / value networks ───────────────────────────────────────────────────
+network:
+  hidden_sizes:      [256, 256]
+  activation:        "elu"          # elu | tanh | relu
+
+# ── PPO training ──────────────────────────────────────────────────────────────
+training:
+  algorithm:         "ppo"
+  total_timesteps:   10_000_000
+  n_envs:            1
+  n_steps:           2048           # rollout length per update
+  n_epochs:          10
+  batch_size:        64
+  lr:                3.0e-4
+  gamma:             0.99
+  gae_lambda:        0.95
+  clip_eps:          0.2
+  value_coef:        0.5
+  entropy_coef:      0.01
+  max_grad_norm:     0.5
+  checkpoint_freq:   100_000        # save every N env steps
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging:
+  level:             "INFO"         # DEBUG | INFO | WARNING | ERROR
+  export_dir:        "export/temp/log"
+  tensorboard:       true
+  csv:               true
+  run_name:          null           # prefix for log files (null = timestamp only)

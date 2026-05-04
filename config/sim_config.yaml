@@ -1,0 +1,20 @@
+# =============================================================================
+# quadrl — simulation-only overrides
+# =============================================================================
+# Use with --config config/sim_config.yaml for quick visual debugging
+# (renders the simulation, short episodes, verbose logging).
+# =============================================================================
+
+env:
+  render_mode:       "human"
+  max_episode_steps: 200
+
+training:
+  total_timesteps:   50_000
+  n_steps:           512
+  checkpoint_freq:   10_000
+
+logging:
+  level:             "DEBUG"
+  tensorboard:       false
+  run_name:          "sim_debug"

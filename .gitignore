@@ -1,0 +1,148 @@
+<<<<<<< Updated upstream
+=======
+# =========================
+# Virtual Environment
+# =========================
+.venv/
+venv/
+ENV/
+env/
+
+# =========================
+# Claude cache
+# =========================
+.claude/
+
+# =========================
+# Python cache
+# =========================
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# =========================
+# Distribution / packaging
+# =========================
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# =========================
+# Logs
+# =========================
+*.log
+
+# =========================
+# Environment variables
+# =========================
+.env
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# =========================
+# OS files
+# ====# =========================
+# Build / CMake
+# =========================
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+Makefile
+*.cmake
+compile_commands.json
+
+# =========================
+# Binaries / Objects
+# =========================
+*.o
+*.so
+*.a
+*.out
+*.exe
+*.dll
+*.dylib
+
+# =========================
+# Python
+# =========================
+**pycache**/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+venv/
+.env/
+.venv/
+
+# =========================
+# Logs / Data (IMPORTANT for your project)
+# =========================
+data/logs/
+data/results/
+
+*.log
+
+# =========================
+# IDE / Editor
+# =========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# =========================
+# OS files
+# =========================
+.DS_Store
+Thumbs.db
+
+# =========================
+# Testing / Coverage
+# =========================
+coverage/
+*.gcda
+*.gcno
+*.gcov
+
+# =========================
+# MuJoCo / Simulation temp
+# =========================
+*.mjb
+*.mjcf.tmp
+
+# =========================
+# Misc
+# =========================
+.cache/
+tmp/
+temp/
+.claude/
+
+# =========================
+# Keep important assets
+# =========================
+# (Do NOT ignore these)
+!asset/
+!config/
+!include/
+!src/
+!sim/
+!scripts/
+!test/=====================
+.DS_Store
+Thumbs.db
+>>>>>>> Stashed changes
