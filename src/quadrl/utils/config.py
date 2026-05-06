@@ -24,24 +24,27 @@ class GaitConfig:
 
 @dataclass
 class ControlConfig:
-    action_scale: float = 5.0          # residual torque scale (Nm)
-    torque_limit: float = 33.5         # Nm per joint (hardware limit)
+    action_scale: float  = 5.0         # residual torque scale (Nm)
+    torque_limit: float  = 33.5        # Nm per joint (hardware limit)
+    kp_actuator: float   = 100.0       # Go1 XML position actuator gain (Nm/rad)
+    kp_cart: float       = 150.0       # Cartesian swing stiffness (N/m)
+    kd_cart: float       = 15.0        # Cartesian swing damping (N·s/m)
 
 @dataclass
 class MpcConfig:
     horizon: int              = 10     # prediction steps N
     dt_mpc: float             = 0.02   # MPC step (= control_dt)
-    target_height: float      = 0.30   # desired CoM height (m)
+    target_height: float      = 0.27   # desired CoM height (m) — matches keyframe
     friction_mu: float        = 0.6    # friction cone coefficient
     f_max: float              = 200.0  # max normal GRF per leg (N)
     torque_limit: float       = 33.5   # Nm per joint (for GRF→τ clipping)
     # State cost weights: [roll, pitch, yaw, px, py, pz, ωx, ωy, ωz, vx, vy, vz]
     state_weights: list[float] = field(
-        default_factory=lambda: [50., 50., 0., 0., 0., 100., 0., 0., 10., 10., 10., 0.]
+        default_factory=lambda: [500., 200., 10., 0., 0., 5000., 300., 100., 10., 100., 100., 50.]
     )
     # Control cost weights: [Fx, Fy, Fz] × 4 legs
     ctrl_weights: list[float] = field(
-        default_factory=lambda: [1e-4, 1e-4, 1e-4] * 4
+        default_factory=lambda: [1e-3, 1e-3, 1e-5] * 4
     )
 
 @dataclass

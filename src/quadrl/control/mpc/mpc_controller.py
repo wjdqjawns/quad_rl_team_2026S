@@ -77,6 +77,48 @@ class MPCController:
 
     # ── Public interface ───────────────────────────────────────────────────────
 
+    def compute_grfs(
+        self,
+        state: RobotState,
+        contact_schedule: np.ndarray,              # (N, 4) bool stance mask
+        desired_velocity: np.ndarray,              # (3,) [vx, vy, vz]
+        desired_yaw_rate: float = 0.0,             # rad/s
+        foot_positions: np.ndarray | None = None,  # (4, 3) optional planned feet
+    ) -> np.ndarray:
+        """Solve MPC QP and return first-step ground reaction forces.
+
+        Args:
+            state:             Current robot body state.
+            contact_schedule:  Stance contact plan over horizon, shape (N, 4).
+            desired_velocity:  Target body velocity [vx, vy, vz].
+            desired_yaw_rate:  Target yaw rate (rad/s).
+            foot_positions:    Optional (4, 3) planned foot positions in world
+                               frame from a footstep planner. Falls back to
+                               current MuJoCo foot positions when None.
+
+        Returns:
+            grfs: (4, 3) optimal GRFs in world frame (first MPC step).
+        """
+        foot_pos = foot_positions if foot_positions is not None else self._foot_positions()
+        com_pos  = state.position
+        I_w      = self._inertia_world(state.euler)
+
+        Bs = [
+            compute_B(I_w, foot_pos, com_pos, self._mass, self._cfg.dt_mpc, contact_schedule[k])
+            for k in range(self._N)
+        ]
+        gs = [gravity_term(self._cfg.dt_mpc)] * self._N
+
+        x_ref = self._build_reference(state, desired_velocity, desired_yaw_rate)
+
+        qp = build_qp(self._A, Bs, gs, state.to_vec(), x_ref,
+                      self._Q, self._R, contact_schedule,
+                      self._cfg.friction_mu, self._cfg.f_max,
+                      mass=self._mass)
+        U  = solve_qp(qp, mass=self._mass)
+
+        return U[:CTRL_DIM].reshape(NUM_LEGS, 3)
+
     def compute(
         self,
         state: RobotState,
@@ -95,27 +137,7 @@ class MPCController:
         Returns:
             tau_mpc: Joint torques from MPC, shape (12,).
         """
-        foot_pos = self._foot_positions()
-        com_pos  = state.position
-        I_w      = self._inertia_world(state.euler)
-
-        # Build B matrices and gravity terms for each step in the horizon
-        Bs = [
-            compute_B(I_w, foot_pos, com_pos, self._mass, self._cfg.dt_mpc, contact_schedule[k])
-            for k in range(self._N)
-        ]
-        gs = [gravity_term(self._cfg.dt_mpc)] * self._N
-
-        # Reference trajectory: constant desired velocity, current height
-        x_ref = self._build_reference(state, desired_velocity, desired_yaw_rate)
-
-        qp   = build_qp(self._A, Bs, gs, state.to_vec(), x_ref,
-                        self._Q, self._R, contact_schedule,
-                        self._cfg.friction_mu, self._cfg.f_max)
-        U    = solve_qp(qp)
-
-        # Extract first-step GRFs and convert to joint torques
-        grfs = U[:CTRL_DIM].reshape(NUM_LEGS, 3)
+        grfs = self.compute_grfs(state, contact_schedule, desired_velocity, desired_yaw_rate)
         return self._grfs_to_torques(grfs)
 
     # ── Internal helpers ───────────────────────────────────────────────────────
@@ -125,12 +147,16 @@ class MPCController:
         return np.array([self._data.site_xpos[sid] for sid in self._foot_ids])
 
     def _inertia_world(self, euler: np.ndarray) -> np.ndarray:
-        """Approximate body inertia in world frame via R I_body R^T."""
+        """Composite robot inertia in world frame from the full mass matrix.
+
+        Uses the top-left 3×3 rotational block of the floating-base mass matrix
+        (= full robot inertia, not just the trunk) for accurate SRBD dynamics.
+        """
         from quadrl.control.mpc.dynamics import euler_to_rotation
-        R = euler_to_rotation(*euler)
-        # Body inertia from MuJoCo (body index 1 = root floating body)
-        I_body = np.diag(self._model.body_inertia[1])
-        return R @ I_body @ R.T
+        M = np.zeros((self._model.nv, self._model.nv))
+        mujoco.mj_fullM(self._model, M, self._data.qM)
+        # Rows/cols 3:6 are the rotational DOFs of the floating base (world frame)
+        return M[3:6, 3:6]
 
     def _build_reference(
         self,

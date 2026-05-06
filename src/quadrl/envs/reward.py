@@ -25,7 +25,7 @@ class RewardFunction:
         observations, or control.
     """
 
-    TARGET_HEIGHT: float = 0.30   # metres above ground
+    TARGET_HEIGHT: float = 0.27   # metres above ground — matches Go1 keyframe
 
     def __init__(self, weights: RewardWeights | None = None) -> None:
         self._w = weights or RewardWeights()

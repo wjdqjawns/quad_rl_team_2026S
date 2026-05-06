@@ -3,19 +3,23 @@
 Problem (condensed form, decision variable = stacked GRFs over horizon N):
 
     min   0.5 * U^T H U + f^T U
-    s.t.  C_eq  * U = b_eq          (dynamics)
-          C_ub  * U ≤ d_ub          (friction cone, stance-only forces)
-          lb ≤ U ≤ ub               (box constraints)
+    s.t.  lb ≤ U ≤ ub               (box constraints — Fz≥0, swing=0)
 
-Solved with scipy.optimize.minimize (SLSQP).
-For real-time deployment replace with osqp or qpsolvers.
+Solved with OSQP (warm-starting, ~0.5 ms per solve).
+Falls back to scipy SLSQP if OSQP is not installed.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import numpy as np
-from scipy.optimize import minimize
+import scipy.sparse as sp
+
+try:
+    import osqp as _osqp_mod
+    _OSQP_AVAILABLE = True
+except ImportError:
+    _OSQP_AVAILABLE = False
 
 from quadrl.control.mpc.dynamics import STATE_DIM, CTRL_DIM, NUM_LEGS
 
@@ -43,6 +47,7 @@ def build_qp(
     contacts: np.ndarray,
     mu: float,
     f_max: float,
+    mass: float = 12.0,
 ) -> QPData:
     """Build QP matrices for an N-step SRBD MPC problem.
 
@@ -102,15 +107,19 @@ def build_qp(
     f = S_u.T @ Q_bar @ (x0_contrib - x_ref_flat)
 
     # ── Box constraints (friction cone + stance enforcement) ──────────────────
+    # Minimum Fz per stance leg prevents the solver from zeroing out one leg
+    # of a diagonal pair (which creates asymmetric roll torques).
     lb = np.zeros(n_u)
     ub = np.zeros(n_u)
 
     for k in range(N):
+        n_stance_k = int(np.sum(contacts[k]))
+        fz_min_k   = (mass * 9.81 / max(n_stance_k, 1)) * 0.05  # 5% of equilibrium per leg
+
         for i in range(NUM_LEGS):
             base = k * CTRL_DIM + i * 3
             if contacts[k, i]:
-                # Fz ∈ [0, f_max], Fx/Fy unconstrained here (friction via SLSQP)
-                lb[base:base + 3] = [-mu * f_max, -mu * f_max, 0.0]
+                lb[base:base + 3] = [-mu * f_max, -mu * f_max, fz_min_k]
                 ub[base:base + 3] = [ mu * f_max,  mu * f_max, f_max]
             else:
                 lb[base:base + 3] = 0.0   # swing: zero force
@@ -119,41 +128,65 @@ def build_qp(
     return QPData(H=H, f=f, C_eq=S_u, b_eq=x_ref_flat - x0_contrib, lb=lb, ub=ub, mu=mu)
 
 
-def solve_qp(qp: QPData) -> np.ndarray:
-    """Solve the convex QP and return optimal GRFs.
+def solve_qp(qp: QPData, mass: float = 12.0) -> np.ndarray:
+    """Solve the box-constrained QP using OSQP (fast) or SLSQP (fallback).
 
     Args:
-        qp: Packed QP data from :func:`build_qp`.
+        qp:   Packed QP data from :func:`build_qp`.
+        mass: Robot mass (kg) — used for SLSQP fallback warm-start.
 
     Returns:
         U_opt: (N*CTRL_DIM,) optimal stacked GRF sequence.
-                First CTRL_DIM elements are the GRFs to apply now.
-
-    Note:
-        Uses scipy SLSQP (correct but slow ~10 ms).
-        Replace with osqp for ≤1 ms real-time solves::
-
-            import osqp, scipy.sparse as sp
-            prob = osqp.OSQP()
-            prob.setup(sp.csc_matrix(qp.H), qp.f, ...)
     """
+    if _OSQP_AVAILABLE:
+        return _solve_osqp(qp)
+    return _solve_slsqp(qp, mass)
+
+
+def _solve_osqp(qp: QPData) -> np.ndarray:
+    """Solve with OSQP.  Box constraints lb ≤ u ≤ ub encoded as I*u in [lb, ub]."""
     n_u = len(qp.lb)
-    u0  = np.zeros(n_u)   # warm-start at zero
+    prob = _osqp_mod.OSQP()
+    prob.setup(
+        P=sp.csc_matrix(qp.H),
+        q=qp.f,
+        A=sp.eye(n_u, format="csc"),
+        l=qp.lb,
+        u=qp.ub,
+        warm_starting=True,
+        verbose=False,
+        eps_abs=1e-5,
+        eps_rel=1e-5,
+        max_iter=4000,
+        polish=True,
+        polish_refine_iter=3,
+    )
+    res = prob.solve()
+    if res.info.status_val in (1, 2):   # solved or solved_inaccurate
+        return res.x
+    # Fallback: clipped unconstrained optimum
+    try:
+        return np.clip(-np.linalg.solve(qp.H, qp.f), qp.lb, qp.ub)
+    except np.linalg.LinAlgError:
+        return np.clip(np.zeros(n_u), qp.lb, qp.ub)
 
-    bounds = list(zip(qp.lb, qp.ub))
 
-    def objective(u):
-        return 0.5 * u @ qp.H @ u + qp.f @ u
+def _solve_slsqp(qp: QPData, mass: float) -> np.ndarray:
+    from scipy.optimize import minimize
 
-    def gradient(u):
-        return qp.H @ u + qp.f
+    try:
+        u0 = np.clip(-np.linalg.solve(qp.H, qp.f), qp.lb, qp.ub)
+    except np.linalg.LinAlgError:
+        u0 = np.zeros(len(qp.lb))
+        n_stance = max(1, int(np.sum(qp.ub[2::3] > 0)))
+        u0[2::3] = np.where(qp.ub[2::3] > 0, mass * 9.81 / n_stance, 0.0)
 
     result = minimize(
-        fun=objective,
+        fun=lambda u: 0.5 * u @ qp.H @ u + qp.f @ u,
         x0=u0,
-        jac=gradient,
-        bounds=bounds,
+        jac=lambda u: qp.H @ u + qp.f,
+        bounds=list(zip(qp.lb, qp.ub)),
         method="SLSQP",
-        options={"maxiter": 100, "ftol": 1e-6},
+        options={"maxiter": 200, "ftol": 1e-8},
     )
     return result.x

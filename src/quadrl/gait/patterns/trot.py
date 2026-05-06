@@ -5,10 +5,11 @@ import numpy as np
 from quadrl.gait.patterns.base_pattern import BaseGaitPattern
 
 # Nominal standing joint angles (radians) for Unitree Go1
+# Match the XML keyframe "home": ctrl="0 0.9 -1.8 ..."
 # Order per leg: [hip_abduction, hip_flexion, knee]
 _HIP_A  =  0.0
-_HIP_F  =  0.67   # ~38 deg
-_KNEE   = -1.30   # ~-74 deg
+_HIP_F  =  0.9    # ~52 deg
+_KNEE   = -1.8    # ~-103 deg
 
 _STAND_POS: np.ndarray = np.array(
     [_HIP_A, _HIP_F, _KNEE] * 4, dtype=np.float64

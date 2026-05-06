@@ -10,7 +10,7 @@
 
 # ── Environment ───────────────────────────────────────────────────────────────
 env:
-  model_path:        "asset/unitree_go1/go1.xml"
+  model_path:        "asset/unitree_go1/scene.xml"
   sim_dt:            0.002          # MuJoCo step: 500 Hz
   control_dt:        0.02           # policy / MPC step: 50 Hz
   max_episode_steps: 1000
@@ -23,28 +23,31 @@ gait:
   stance_ratio:      0.6            # fraction of cycle in stance
   step_height:       0.08           # swing foot lift height (m)  [informational]
 
-# ── Residual action scale ─────────────────────────────────────────────────────
+# ── Control ───────────────────────────────────────────────────────────────────
 control:
   action_scale:      5.0            # RL residual torque scale (Nm)
   torque_limit:      33.5           # hardware torque limit per joint (Nm)
+  kp_actuator:       100.0          # Go1 position actuator gain (Nm/rad, from XML)
+  kp_cart:           150.0          # Cartesian swing stiffness (N/m)
+  kd_cart:           15.0           # Cartesian swing damping (N·s/m)
 
 # ── MPC (Single Rigid Body Dynamics, Convex QP) ───────────────────────────────
 mpc:
   horizon:           10             # prediction steps N
   dt_mpc:            0.02           # MPC discretisation step (= control_dt)
-  target_height:     0.30           # desired CoM height (m)
-  friction_mu:       0.6            # friction cone coefficient μ
+  target_height:     0.27           # desired CoM height (m) — matches keyframe
+  friction_mu:       0.4            # friction cone coefficient μ
   f_max:             200.0          # max normal GRF per stance leg (N)
   torque_limit:      33.5           # Nm — clips GRF→τ conversion output
 
   # State cost: [roll, pitch, yaw, px, py, pz, ωx, ωy, ωz, vx, vy, vz]
-  state_weights:     [50., 50., 0., 0., 0., 100., 0., 0., 10., 10., 10., 0.]
+  state_weights:     [2000., 500., 10., 0., 0., 5000., 1000., 200., 10., 60., 60., 50.]
 
   # Control cost: [Fx, Fy, Fz] × 4 legs  (penalises large GRFs)
-  ctrl_weights:      [1.e-4, 1.e-4, 1.e-4,
-                      1.e-4, 1.e-4, 1.e-4,
-                      1.e-4, 1.e-4, 1.e-4,
-                      1.e-4, 1.e-4, 1.e-4]
+  ctrl_weights:      [1.e-3, 1.e-3, 1.e-5,
+                      1.e-3, 1.e-3, 1.e-5,
+                      1.e-3, 1.e-3, 1.e-5,
+                      1.e-3, 1.e-3, 1.e-5]
 
 # ── Policy / value networks ───────────────────────────────────────────────────
 network:
