@@ -27,7 +27,8 @@ class TrotPattern(BaseGaitPattern):
 
     @property
     def leg_offsets(self) -> np.ndarray:
-        # FL=0.0, FR=0.5, RL=0.5, RR=0.0  →  diagonal pairs move together
+        # Leg index convention matches MuJoCo actuator order: [FR, FL, RR, RL]
+        # FR=0.0, FL=0.5, RR=0.5, RL=0.0  →  FR+RL and FL+RR diagonal pairs in phase
         return np.array([0.0, 0.5, 0.5, 0.0], dtype=np.float64)
 
     @property

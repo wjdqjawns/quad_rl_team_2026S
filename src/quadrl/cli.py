@@ -1,3 +1,12 @@
+#*************************************************************************/
+# File Name: ./src/quadrl/cli.py
+# Author: Beomjun Chung
+# Updated: 2026-05-05
+#
+# Description:
+#   QuadRL command-line interface entry point. Parses arguments and invokes main training function.
+#*************************************************************************/
+
 from __future__ import annotations
 
 import argparse
@@ -9,7 +18,7 @@ from quadrl.main import run
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="quadrl",
-        description="Quadruped Residual RL — training entry point",
+        description="QuadRL CLI - Train a quadrotor reinforcement learning agent with configurable settings",
     )
     parser.add_argument(
         "--config",
@@ -31,15 +40,14 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     return parser
 
-
 def cli_main(argv: Sequence[str] | None = None) -> None:
     args = _build_parser().parse_args(argv)
+
     run(
         config_path=args.config,
         dry_run=args.dry_run,
         log_level=args.log_level,
     )
-
 
 if __name__ == "__main__":
     cli_main()

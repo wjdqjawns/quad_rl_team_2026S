@@ -52,8 +52,8 @@ class MPCController:
         data:  MuJoCo MjData (updated externally before each call).
     """
 
-    # MuJoCo body / site names for Go1 foot sites (must match go1.xml)
-    _FOOT_SITE_NAMES = ["FL_foot", "FR_foot", "RL_foot", "RR_foot"]
+    # MuJoCo site names — order defines leg index convention [FR, FL, RR, RL]
+    _FOOT_SITE_NAMES = ["FR", "FL", "RR", "RL"]
 
     def __init__(self, cfg: MpcConfig, model: mujoco.MjModel, data: mujoco.MjData) -> None:
         self._cfg   = cfg
@@ -80,15 +80,17 @@ class MPCController:
     def compute(
         self,
         state: RobotState,
-        contact_schedule: np.ndarray,   # (N, 4) bool stance mask over horizon
-        desired_velocity: np.ndarray,   # (3,) desired body linear velocity
+        contact_schedule: np.ndarray,       # (N, 4) bool stance mask over horizon
+        desired_velocity: np.ndarray,       # (3,) desired body linear velocity [vx, vy, vz]
+        desired_yaw_rate: float = 0.0,      # desired body yaw rate (rad/s)
     ) -> np.ndarray:
         """Solve MPC QP and return reference joint torques.
 
         Args:
-            state:            Current robot body state.
-            contact_schedule: Stance contact plan over the horizon, shape (N, 4).
-            desired_velocity: Target body velocity [vx, vy, vz].
+            state:             Current robot body state.
+            contact_schedule:  Stance contact plan over the horizon, shape (N, 4).
+            desired_velocity:  Target body velocity [vx, vy, vz].
+            desired_yaw_rate:  Target yaw rate (rad/s).
 
         Returns:
             tau_mpc: Joint torques from MPC, shape (12,).
@@ -105,7 +107,7 @@ class MPCController:
         gs = [gravity_term(self._cfg.dt_mpc)] * self._N
 
         # Reference trajectory: constant desired velocity, current height
-        x_ref = self._build_reference(state, desired_velocity)
+        x_ref = self._build_reference(state, desired_velocity, desired_yaw_rate)
 
         qp   = build_qp(self._A, Bs, gs, state.to_vec(), x_ref,
                         self._Q, self._R, contact_schedule,
@@ -134,6 +136,7 @@ class MPCController:
         self,
         state: RobotState,
         desired_velocity: np.ndarray,
+        desired_yaw_rate: float = 0.0,
     ) -> np.ndarray:
         """Constant-velocity reference trajectory over horizon, shape (N, STATE_DIM)."""
         cfg    = self._cfg
@@ -141,13 +144,14 @@ class MPCController:
         dt_mpc = cfg.dt_mpc
 
         for k in range(self._N):
-            # Orientation: track zero roll/pitch, keep current yaw
-            x_ref[k, 0:3] = [0.0, 0.0, state.euler[2]]
+            t = (k + 1) * dt_mpc
+            # Orientation: zero roll/pitch; yaw integrates from commanded yaw rate
+            x_ref[k, 0:3] = [0.0, 0.0, state.euler[2] + desired_yaw_rate * t]
             # Position: propagate from current at desired velocity
-            x_ref[k, 3:6] = state.position + desired_velocity * (k + 1) * dt_mpc
-            x_ref[k, 5]   = cfg.target_height       # keep body height
-            # Angular velocity: zero (no rotation commanded)
-            x_ref[k, 6:9] = [0.0, 0.0, 0.0]
+            x_ref[k, 3:6] = state.position + desired_velocity * t
+            x_ref[k, 5]   = cfg.target_height
+            # Angular velocity: commanded yaw rate only
+            x_ref[k, 6:9] = [0.0, 0.0, desired_yaw_rate]
             # Linear velocity: desired
             x_ref[k, 9:12] = desired_velocity
 
